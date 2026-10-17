@@ -1,7 +1,8 @@
 import os
 import sqlite3
 import logging
-from flask import Flask, request
+import asyncio
+from aiohttp import web
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -15,10 +16,10 @@ from telegram.ext import (
 # Configuración de Logs
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- VARIABLES DE ENTORNO EN RENDER ---
+# --- DATOS CONFIGURADOS ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8911010643:AAFg6p4MYFH9ipyHNz0KxafCZE-gNCy6Suk")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "5962089466"))  # Tu ID numérico de Telegram
-RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "")  # URL automática asignada por Render
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "5962089466"))
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "")
 
 # --- INICIALIZACIÓN DE BASE DE DATOS (SQLITE) ---
 def init_db():
@@ -227,34 +228,46 @@ async def show_leagues_screen(query, user_id, cursor):
     keyboard = [[InlineKeyboardButton(l[1], callback_data=f"view_league_{l[0]}")] for l in leagues]
     await query.edit_message_text("🏆 **Ligas Disponibles:**\nSelecciona una para consultar los partidos:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-# --- SERVIDOR FLASK INTEGRADO PARA EL WEB SERVICE GRATUITO ---
-flask_app = Flask(__name__)
+# --- CONSTRUCCIÓN DE LA APLICACIÓN TELEGRAM ---
 ptb_app = ApplicationBuilder().token(BOT_TOKEN).build()
-
 ptb_app.add_handler(CommandHandler("start", start))
 ptb_app.add_handler(CommandHandler("admin", admin_panel))
 ptb_app.add_handler(CallbackQueryHandler(button_handler))
 ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-@flask_app.route('/', methods=['GET'])
-def health():
-    return "Bot activo y saludable", 200
+# --- RUTAS DE AIOHTTP PARA RENDER ---
+async def health_check(request):
+    return web.Response(text="Bot activo y saludable")
 
-@flask_app.route(f'/{BOT_TOKEN}', methods=['POST'])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), ptb_app.bot)
+async def telegram_webhook(request):
+    data = await request.json()
+    update = Update.de_json(data, ptb_app.bot)
     await ptb_app.process_update(update)
-    return 'ok', 200
+    return web.Response(text="ok")
+
+async def main():
+    await ptb_app.initialize()
+    await ptb_app.start()
+    
+    # Configurar Webhook si existe la URL de Render
+    if RENDER_EXTERNAL_URL:
+        webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
+        await ptb_app.bot.set_webhook(url=webhook_url)
+        logging.info(f"Webhook registrado en: {webhook_url}")
+
+    app = web.Application()
+    app.router.add_get("/", health_check)
+    app.router.add_post(f"/{BOT_TOKEN}", telegram_webhook)
+
+    port = int(os.environ.get("PORT", 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.info(f"Servidor aiohttp escuchando en puerto {port}")
+
+    # Mantener corriendo el evento principal
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    
-    # Registro automático de Webhook con Telegram
-    if RENDER_EXTERNAL_URL:
-        import asyncio
-        webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
-        asyncio.run(ptb_app.bot.set_webhook(url=webhook_url))
-        print(f"Webhook configurado exitosamente en: {webhook_url}")
-    
-    ptb_app.initialize()
-    flask_app.run(host="0.0.0.0", port=port)
+    asyncio.run(main())
