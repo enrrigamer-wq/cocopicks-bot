@@ -1,5 +1,7 @@
+import os
 import sqlite3
 import logging
+from flask import Flask, request
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,11 +15,12 @@ from telegram.ext import (
 # Configuración de Logs
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- CONFIGURACIÓN PRINCIPAL ---
-BOT_TOKEN = "8911010643:AAFg6p4MYFH9ipyHNz0KxafCZE-gNCy6Suk"
-ADMIN_ID = 5962089466
+# --- VARIABLES DE ENTORNO EN RENDER ---
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8911010643:AAFg6p4MYFH9ipyHNz0KxafCZE-gNCy6Suk")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "5962089466"))  # Tu ID numérico de Telegram
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "")  # URL automática asignada por Render
 
-# --- INICIALIZACIÓN DE BASE DE DATOS (SQLITE - GRATUITO) ---
+# --- INICIALIZACIÓN DE BASE DE DATOS (SQLITE) ---
 def init_db():
     conn = sqlite3.connect("bot_sports.db")
     cursor = conn.cursor()
@@ -54,10 +57,9 @@ def init_db():
 
 init_db()
 
-# Dict auxiliar para manejar estados del Admin al escribir mensajes
 ADMIN_STATES = {}
 
-# --- COMANDO /START (CLIENTE) ---
+# --- COMANDO /START ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
@@ -76,21 +78,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🌐 Selecciona tu idioma / Select your language:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- COMANDO /ADMIN (EXCLUSIVO PARA TI) ---
+# --- COMANDO /ADMIN ---
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
-        await update.message.reply_text("⛔ Acceso denegado. Este comando es solo para el administrador.")
+        await update.message.reply_text("⛔ Acceso denegado. Este comando es exclusivo para el administrador.")
         return
 
     keyboard = [
         [InlineKeyboardButton("➕ Agregar Liga", callback_data="admin_add_league")],
-        [InlineKeyboardButton("⚽ Agregar Partido y Pronóstico", callback_data="admin_add_match")],
-        [InlineKeyboardButton("📋 Ver Ligas y Partidos Registrados", callback_data="admin_list_all")]
+        [InlineKeyboardButton("⚽ Agregar Partido y Pronóstico", callback_data="admin_add_match")]
     ]
-    await update.message.reply_text("🛠️ **Panel de Control de Administrador**\n¿Qué deseas hacer?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await update.message.reply_text("🛠️ **Panel de Administrador**\n¿Qué deseas hacer?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-# --- MANEJADOR DE BOTONES (CALLBACKS) ---
+# --- MANEJADOR DE BOTONES ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -100,14 +101,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect("bot_sports.db")
     cursor = conn.cursor()
 
-    # IDIOMAS
     if data.startswith("lang_"):
         lang = data.split("_")[1]
         cursor.execute("UPDATE users SET lang = ? WHERE user_id = ?", (lang, user_id))
         conn.commit()
         await show_main_screen(query, user_id, cursor)
 
-    # SIMULACIÓN DE PAGO BINANCE
     elif data.startswith("pay_"):
         plan = data.split("_")[1]
         keyboard = [[InlineKeyboardButton("✅ Confirmar Pago (Simulación)", callback_data=f"confirm_pay_{plan}")]]
@@ -119,7 +118,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🎉 ¡Pago confirmado con éxito! Ahora tienes acceso VIP.")
         await show_leagues_screen(query, user_id, cursor)
 
-    # NAVEGACIÓN CLIENTE (LIGAS Y PRONÓSTICOS)
     elif data == "show_leagues":
         await show_leagues_screen(query, user_id, cursor)
 
@@ -143,10 +141,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔙 Volver a Ligas", callback_data="show_leagues")]]
         await query.edit_message_text(f"📌 **{match[0]}**\n\n{match[1]}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    # ACCIONES DE ADMINISTRADOR
     elif data == "admin_add_league":
         ADMIN_STATES[user_id] = "WAITING_LEAGUE_NAME"
-        await query.edit_message_text("📝 Escribe el nombre de la nueva Liga (Ej: NBA, Premier League, MLB):")
+        await query.edit_message_text("📝 Escribe el nombre de la nueva Liga (Ej: NBA, Premier League):")
 
     elif data == "admin_add_match":
         cursor.execute("SELECT id, name FROM leagues")
@@ -164,7 +161,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn.close()
 
-# --- MANEJADOR DE MENSAJES DE TEXTO (PARA CARGAR DATOS COMO ADMIN) ---
+# --- MANEJADOR DE TEXTO (ADMIN) ---
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
@@ -174,20 +171,17 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect("bot_sports.db")
         cursor = conn.cursor()
 
-        # Crear Liga
         if state == "WAITING_LEAGUE_NAME":
             cursor.execute("INSERT INTO leagues (name) VALUES (?)", (text,))
             conn.commit()
             del ADMIN_STATES[user_id]
             await update.message.reply_text(f"✅ Liga **{text}** creada exitosamente. Usa /admin para continuar.", parse_mode="Markdown")
 
-        # Guardar Título del Partido
         elif state.startswith("WAITING_MATCH_TITLE_"):
             league_id = int(state.split("_")[3])
             ADMIN_STATES[user_id] = f"WAITING_MATCH_PRED_{league_id}_{text}"
-            await update.message.reply_text("✍️ Ahora pega el **Pronóstico** (puedes pegar aquí lo que te genera tu Prompt de IA):")
+            await update.message.reply_text("✍️ Ahora pega el **Pronóstico** de tu IA:")
 
-        # Guardar Pronóstico
         elif state.startswith("WAITING_MATCH_PRED_"):
             parts = state.split("_")
             league_id = int(parts[3])
@@ -196,11 +190,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute("INSERT INTO matches (league_id, title, prediction) VALUES (?, ?, ?)", (league_id, match_title, text))
             conn.commit()
             del ADMIN_STATES[user_id]
-            await update.message.reply_text(f"🚀 ¡Partido y Pronóstico para **{match_title}** guardados con éxito! Usa /admin para seguir.", parse_mode="Markdown")
+            await update.message.reply_text(f"🚀 ¡Partido y Pronóstico para **{match_title}** guardados con éxito!", parse_mode="Markdown")
 
         conn.close()
 
-# --- PANTALLAS DE INTERFAZ ---
 async def show_main_screen(query, user_id, cursor):
     cursor.execute("SELECT lang, is_subscribed FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
@@ -228,17 +221,40 @@ async def show_leagues_screen(query, user_id, cursor):
     leagues = cursor.fetchall()
     
     if not leagues:
-        await query.edit_message_text("🏆 No hay ligas disponibles por el momento. Vuelve más tarde.")
+        await query.edit_message_text("🏆 No hay ligas disponibles por el momento.")
         return
 
     keyboard = [[InlineKeyboardButton(l[1], callback_data=f"view_league_{l[0]}")] for l in leagues]
     await query.edit_message_text("🏆 **Ligas Disponibles:**\nSelecciona una para consultar los partidos:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
+# --- SERVIDOR FLASK INTEGRADO PARA EL WEB SERVICE GRATUITO ---
+flask_app = Flask(__name__)
+ptb_app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+ptb_app.add_handler(CommandHandler("start", start))
+ptb_app.add_handler(CommandHandler("admin", admin_panel))
+ptb_app.add_handler(CallbackQueryHandler(button_handler))
+ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+@flask_app.route('/', methods=['GET'])
+def health():
+    return "Bot activo y saludable", 200
+
+@flask_app.route(f'/{BOT_TOKEN}', methods=['POST'])
+async def webhook():
+    update = Update.de_json(request.get_json(force=True), ptb_app.bot)
+    await ptb_app.process_update(update)
+    return 'ok', 200
+
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    print("Bot activo...")
-    app.run_polling()
+    port = int(os.environ.get("PORT", 10000))
+    
+    # Registro automático de Webhook con Telegram
+    if RENDER_EXTERNAL_URL:
+        import asyncio
+        webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
+        asyncio.run(ptb_app.bot.set_webhook(url=webhook_url))
+        print(f"Webhook configurado exitosamente en: {webhook_url}")
+    
+    ptb_app.initialize()
+    flask_app.run(host="0.0.0.0", port=port)
