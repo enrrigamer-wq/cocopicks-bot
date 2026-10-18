@@ -3,7 +3,7 @@ import sqlite3
 import logging
 import asyncio
 from aiohttp import web
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -24,14 +24,13 @@ RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "")
 # --- DATOS REALES DE BINANCE PAY ---
 BINANCE_PAY_ID = "735205094"
 BINANCE_PAY_EMAIL = "cadizsantiago8@gmail.com"
-BINANCE_QR_URL = "https://i.ibb.co/68vN0v0/binance-qr.jpg"  # Enlace alojado de tu QR
 
 # --- INICIALIZACIÓN DE BASE DE DATOS (SQLITE) ---
 def init_db():
     conn = sqlite3.connect("bot_sports.db")
     cursor = conn.cursor()
     
-    # Tabla de Usuarios (Suscripciones y Rol de Admin)
+    # Tabla de Usuarios
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -77,7 +76,7 @@ def is_user_admin(user_id):
     conn.close()
     return (row and row[0] == 1) or user_id == SUPERADMIN_ID
 
-# --- COMANDO /START (ENTRADA DIRECTA SIN IDIOMAS) ---
+# --- COMANDO /START ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username or "SinUsername"
@@ -94,7 +93,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     text = (
-        "👋 ¡Bienvenido a **SportsPicks VIP**!\n\n"
+        "👋 ¡Bienvenido a **COCOPICKS VIP**!\n\n"
         "Obtén los mejores pronósticos deportivos automatizados e impulsados por inteligencia artificial.\n\n"
         "💳 **Planes de Suscripción:**\n"
         "• 1 Mes: **$20 USDT**\n"
@@ -150,13 +149,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         texto_pago = (
             f"💳 **INSTRUCCIONES DE PAGO BINANCE PAY**\n\n"
             f"📌 **Plan Seleccionado:** {monto}\n\n"
-            f"Escanéa el código QR arriba o utiliza los siguientes datos para realizar la transferencia:\n\n"
+            f"Utiliza los siguientes datos para realizar la transferencia en la App de Binance:\n\n"
             f"🔹 **Binance Pay ID:** `{BINANCE_PAY_ID}`\n"
             f"🔹 **Correo de Binance:** `{BINANCE_PAY_EMAIL}`\n\n"
             f"📌 **Pasos finales:**\n"
             f"1. Realiza el pago exacto en **USDT**.\n"
             f"2. Haz una captura de pantalla del comprobante de pago.\n"
-            f"3. Presiona el botón **'Ya envié el pago'** abajo para notificar al administrador.\n\n"
+            f"3. Presiona el botón **'✅ Ya envié el pago'** abajo para notificar al administrador.\n\n"
             f"*(Nota: El bot a veces puede tardar unos segundos en responder)*\n\n"
             f"⏳ *Tu aprobación de pago será verificada y activada en menos de 24 horas.*"
         )
@@ -166,18 +165,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔙 Volver al Menú", callback_data="show_main")]
         ]
         
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-            
-        await context.bot.send_photo(
-            chat_id=user_id,
-            photo=BINANCE_QR_URL,
-            caption=texto_pago,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
+        await query.edit_message_text(texto_pago, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("notify_admin_payment_"):
         plan = data.split("_")[3]
@@ -215,7 +203,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=target_id,
-                text="🎉 **¡Tu pago ha sido verificado con éxito!**\n\nTu suscripción VIP ya está activa. Escribe /start para acceder a los pronósticos.",
+                text="🎉 **¡Tu pago ha sido verificado con éxito!**\n\nTu suscripción VIP ya está activa. Toca el botón /start para acceder a los pronósticos.",
                 parse_mode="Markdown"
             )
         except Exception:
@@ -233,7 +221,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "show_leagues":
         await show_leagues_screen(query, user_id, cursor)
 
-    # AL SELECCIONAR UNA LIGA -> MUESTRA TODOS LOS PRONÓSTICOS DE ESA LIGA DE UNA VEZ
     elif data.startswith("view_league_"):
         league_id = int(data.split("_")[2])
         cursor.execute("SELECT name FROM leagues WHERE id = ?", (league_id,))
@@ -296,7 +283,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not matches:
             await query.edit_message_text("⚠️ No hay pronósticos cargados.")
         else:
-            keyboard = [[InlineKeyboardButton(f"❌ [{m[2]}] {m[1]}", callback_data=f"confirm_del_match_{m[0]}")] for m in matches]
+            keyboard = [[InlineKeyboardButton(f"❌ [{m[2]}] {m[1]}", callback_data=f"confirm_del_match_{m[0]}")] for l in matches]
             keyboard.append([InlineKeyboardButton("🔙 Cancelar", callback_data="admin_back")])
             await query.edit_message_text("Selecciona el pronóstico a eliminar:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -412,7 +399,7 @@ async def show_main_screen(query, user_id, cursor):
     is_sub = row[0] if row else 0
 
     text = (
-        "👋 ¡Bienvenido a **SportsPicks VIP**!\n\n"
+        "👋 ¡Bienvenido a **COCOPICKS VIP**!\n\n"
         "Obtén los mejores pronósticos deportivos automatizados e impulsados por inteligencia artificial.\n\n"
         "💳 **Planes de Suscripción:**\n"
         "• 1 Mes: **$20 USDT**\n"
@@ -471,6 +458,12 @@ async def telegram_webhook(request):
 async def main():
     await ptb_app.initialize()
     await ptb_app.start()
+    
+    # Registrar comandos oficiales en el menú desplegable de Telegram
+    await ptb_app.bot.set_my_commands([
+        BotCommand("start", "Iniciar o reiniciar el bot"),
+        BotCommand("admin", "Panel de administración (Solo Admins)")
+    ])
     
     if RENDER_EXTERNAL_URL:
         webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
