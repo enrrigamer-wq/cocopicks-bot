@@ -40,7 +40,7 @@ def init_db():
         )
     ''')
     
-    # Asegurar que el Creador sea SuperAdmin
+    # Garantizar SuperAdmin
     cursor.execute("INSERT INTO users (user_id, is_admin) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET is_admin = 1", (SUPERADMIN_ID,))
     
     # Tabla de Ligas
@@ -67,6 +67,7 @@ def init_db():
 init_db()
 
 ADMIN_STATES = {}
+USER_PAYMENT_STATE = {}  # Registra el plan seleccionado por cada usuario
 
 def is_user_admin(user_id):
     conn = sqlite3.connect("bot_sports.db")
@@ -93,23 +94,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     text = (
-        "👋 ¡Bienvenido a **COCOPICKS VIP**!\n\n"
-        "Obtén los mejores pronósticos deportivos automatizados e impulsados por inteligencia artificial.\n\n"
-        "💳 **Planes de Suscripción:**\n"
+        "🔥 **¡BIENVENIDO A COCOPICKS VIP!** 🔥\n\n"
+        "Obtén pronósticos deportivos profesionales con alto porcentaje de acierto, respaldados por análisis estadístico e inteligencia artificial.\n\n"
+        "💳 **Planes de Suscripción VIP:**\n"
         "• 1 Mes: **$20 USDT**\n"
-        "• 2 Meses: **$35 USDT**\n"
-        "• 6 Meses: **$100 USDT**\n\n"
+        "• 2 Meses: **$35 USDT** *(Ahorra $5)*\n"
+        "• 6 Meses: **$100 USDT** *(Ahorra $20)*\n\n"
         "*(Nota: El bot a veces puede tardar unos segundos en responder)*\n\n"
-        "Selecciona una opción abajo para ver las instrucciones y realizar tu pago vía Binance Pay:"
+        "👇 **Selecciona tu plan para ver los datos de pago:**"
     )
     
     keyboard = [
-        [InlineKeyboardButton("1 Mes ($20 USDT)", callback_data="pay_1m")],
-        [InlineKeyboardButton("2 Meses ($35 USDT)", callback_data="pay_2m")],
-        [InlineKeyboardButton("6 Meses ($100 USDT)", callback_data="pay_6m")],
+        [InlineKeyboardButton("⭐ 1 Mes ($20 USDT)", callback_data="pay_1m")],
+        [InlineKeyboardButton("🔥 2 Meses ($35 USDT)", callback_data="pay_2m")],
+        [InlineKeyboardButton("💎 6 Meses ($100 USDT)", callback_data="pay_6m")],
     ]
     if is_sub:
-        keyboard.append([InlineKeyboardButton("🚀 Ver Pronósticos VIP", callback_data="show_leagues")])
+        keyboard.append([InlineKeyboardButton("🚀 ACCEDER A PRONÓSTICOS VIP", callback_data="show_leagues")])
 
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -117,7 +118,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_user_admin(user_id):
-        await update.message.reply_text("⛔ Acceso denegado. Este comando es exclusivo para administradores.")
+        await update.message.reply_text("⛔ Acceso denegado. Comando exclusivo para administradores.")
         return
 
     keyboard = [
@@ -127,7 +128,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("👑 Agregar Nuevo Admin", callback_data="admin_add_admin")],
         [InlineKeyboardButton("📋 Ver Estado de la Base de Datos", callback_data="admin_list_all")]
     ]
-    await update.message.reply_text("🛠️ **Panel de Control de Administrador**\n\n¿Qué acción deseas realizar?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await update.message.reply_text("🛠️ **Panel de Control de Administrador**\n\nSelecciona una acción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # --- MANEJADOR DE BOTONES ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,25 +144,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # VISTA DE PAGO BINANCE
     if data.startswith("pay_"):
         plan = data.split("_")[1]
+        USER_PAYMENT_STATE[user_id] = plan
         precios = {"1m": "$20 USDT (1 Mes)", "2m": "$35 USDT (2 Meses)", "6m": "$100 USDT (6 Meses)"}
         monto = precios.get(plan, "$20 USDT")
         
         texto_pago = (
-            f"💳 **INSTRUCCIONES DE PAGO BINANCE PAY**\n\n"
+            f"💳 **DATOS DE PAGO BINANCE PAY**\n\n"
             f"📌 **Plan Seleccionado:** {monto}\n\n"
-            f"Utiliza los siguientes datos para realizar la transferencia en la App de Binance:\n\n"
+            f"Transfiere en la App de Binance usando cualquiera de estos datos:\n\n"
             f"🔹 **Binance Pay ID:** `{BINANCE_PAY_ID}`\n"
-            f"🔹 **Correo de Binance:** `{BINANCE_PAY_EMAIL}`\n\n"
-            f"📌 **Pasos finales:**\n"
-            f"1. Realiza el pago exacto en **USDT**.\n"
-            f"2. Haz una captura de pantalla del comprobante de pago.\n"
-            f"3. Presiona el botón **'✅ Ya envié el pago'** abajo para notificar al administrador.\n\n"
-            f"*(Nota: El bot a veces puede tardar unos segundos en responder)*\n\n"
-            f"⏳ *Tu aprobación de pago será verificada y activada en menos de 24 horas.*"
+            f"🔹 **Correo Binance:** `{BINANCE_PAY_EMAIL}`\n\n"
+            f"📸 **PASOS PARA ACTIVAR:**\n"
+            f"1. Realiza el pago en **USDT**.\n"
+            f"2. Toma una captura del comprobante de pago.\n"
+            f"3. **ENVÍA LA FOTO DE LA CAPTURA AQUÍ EN ESTE CHAT**.\n"
+            f"4. Luego de enviar la foto, presiona el botón **'✅ Ya envié la captura'** abajo.\n\n"
+            f"⏳ *Tu solicitud será verificada y activada en menos de 24 horas.*"
         )
         
         keyboard = [
-            [InlineKeyboardButton("✅ Ya envié el pago", callback_data=f"notify_admin_payment_{plan}")],
+            [InlineKeyboardButton("✅ Ya envié la captura de pago", callback_data=f"notify_admin_payment_{plan}")],
             [InlineKeyboardButton("🔙 Volver al Menú", callback_data="show_main")]
         ]
         
@@ -171,24 +173,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plan = data.split("_")[3]
         
         msg_cliente = (
-            "📩 **¡Notificación Registrada!**\n\n"
-            "Por favor envía en este chat la **captura del comprobante** de pago.\n"
-            f"Tu ID de Usuario es: `{user_id}`\n\n"
-            "⏳ Tu suscripción será verificada y activada en un plazo máximo de **24 horas**."
+            "📩 **¡NOTIFICACIÓN REGISTRADA!**\n\n"
+            "Si aún no has enviado la foto del comprobante, **por favor envíala ahora en este chat**.\n\n"
+            f"🆔 Tu ID de Usuario: `{user_id}`\n"
+            "⏳ El administrador revisará tu comprobante y activará tu acceso en breve (Máximo 24h)."
         )
         await query.message.reply_text(msg_cliente, parse_mode="Markdown")
 
         try:
             keyboard_admin = [
-                [InlineKeyboardButton(f"⚡ Activar VIP a {user_id}", callback_data=f"auto_activate_{user_id}")],
-                [InlineKeyboardButton(f"🚫 Anular VIP a {user_id}", callback_data=f"auto_revoke_{user_id}")]
+                [InlineKeyboardButton(f"⚡ APROBAR VIP a {user_id}", callback_data=f"auto_activate_{user_id}")],
+                [InlineKeyboardButton(f"🚫 ANULAR a {user_id}", callback_data=f"auto_revoke_{user_id}")]
             ]
             await context.bot.send_message(
                 chat_id=SUPERADMIN_ID,
-                text=f"🔔 **NUEVO REPORTE DE PAGO**\n\n"
+                text=f"🔔 **REPORTE DE PAGO REGISTRADO**\n\n"
                      f"👤 **Usuario:** @{username} (ID: `{user_id}`)\n"
                      f"📦 **Plan:** {plan}\n\n"
-                     f"Revisa el pago en Binance y selecciona la acción:",
+                     f"El usuario ha confirmado el envío. Revisa sus mensajes/fotos y aprueba abajo:",
                 reply_markup=InlineKeyboardMarkup(keyboard_admin),
                 parse_mode="Markdown"
             )
@@ -203,7 +205,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=target_id,
-                text="🎉 **¡Tu pago ha sido verificado con éxito!**\n\nTu suscripción VIP ya está activa. Toca el botón /start para acceder a los pronósticos.",
+                text="🎉 **¡TU PAGO HA SIDO VERIFICADO EXITOSAMENTE!**\n\nTu suscripción VIP a COCOPICKS ya está activa. Presiona /start para consultar todos los pronósticos disponibles.",
                 parse_mode="Markdown"
             )
         except Exception:
@@ -233,9 +235,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔙 Volver a Ligas", callback_data="show_leagues")]]
         
         if not matches:
-            texto = f"🏆 **{league_name}**\n\nNo hay pronósticos disponibles en esta liga por el momento."
+            texto = f"🏆 **{league_name}**\n\nNo hay pronósticos activos para esta liga en este momento."
         else:
-            texto = f"🏆 **PRONÓSTICOS DISPONIBLES EN {league_name.upper()}**\n\n"
+            texto = f"🏆 **PRONÓSTICOS VIP - {league_name.upper()}**\n\n"
             for m in matches:
                 texto += f"📌 **{m[0]}**\n{m[1]}\n───────────────────\n\n"
                 
@@ -244,7 +246,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ACCIONES DEL PANEL ADMINISTRADOR
     elif data == "admin_add_league":
         ADMIN_STATES[user_id] = "WAITING_LEAGUE_NAME"
-        await query.edit_message_text("📝 Escribe el nombre de la nueva Liga (Ej: NBA, Premier League):")
+        await query.edit_message_text("📝 Escribe el nombre de la nueva Liga (Ej: NBA, Premier League, MLB):")
 
     elif data == "admin_del_league":
         cursor.execute("SELECT id, name FROM leagues")
@@ -270,7 +272,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ Primero debes crear al menos una liga.")
         else:
             keyboard = [[InlineKeyboardButton(l[1], callback_data=f"admin_select_league_{l[0]}")] for l in leagues]
-            await query.edit_message_text("Selecciona la liga para el pronóstico:", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("Selecciona la liga para publicar el pronóstico:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("admin_select_league_"):
         league_id = int(data.split("_")[3])
@@ -291,27 +293,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         match_id = int(data.split("_")[3])
         cursor.execute("DELETE FROM matches WHERE id = ?", (match_id,))
         conn.commit()
-        await query.edit_message_text("🗑️ Pronóstico eliminado de la base de datos. Usa /admin para continuar.")
+        await query.edit_message_text("🗑️ Pronóstico eliminado con éxito. Usa /admin para continuar.")
 
     elif data == "admin_activate_user":
         ADMIN_STATES[user_id] = "WAITING_USER_ID_TO_ACTIVATE"
-        await query.edit_message_text("👤 Escribe o pega el **ID de Telegram del cliente** a quien deseas APROBAR el VIP:")
+        await query.edit_message_text("👤 Escribe o pega el **ID de Telegram del cliente** a aprobar:")
 
     elif data == "admin_revoke_user":
         ADMIN_STATES[user_id] = "WAITING_USER_ID_TO_REVOKE"
-        await query.edit_message_text("🚫 Escribe o pega el **ID de Telegram del cliente** a quien deseas ANULAR/CANCELAR el VIP:")
+        await query.edit_message_text("🚫 Escribe o pega el **ID de Telegram del cliente** a anular:")
 
     elif data == "admin_add_admin":
         ADMIN_STATES[user_id] = "WAITING_NEW_ADMIN_ID"
-        await query.edit_message_text("👑 Escribe o pega el **ID de Telegram** del usuario que deseas nombrar como ADMINISTRADOR:")
+        await query.edit_message_text("👑 Escribe o pega el **ID de Telegram** para el nuevo Administrador:")
 
     elif data == "admin_list_all":
         cursor.execute("SELECT leagues.name, matches.title FROM leagues LEFT JOIN matches ON leagues.id = matches.league_id")
         rows = cursor.fetchall()
         if not rows:
-            res = "ℹ️ La base de datos está vacía."
+            res = "ℹ️ La base de datos está completamente vacía."
         else:
-            res = "📋 **ESTADO DE LA BASE DE DATOS:**\n\n"
+            res = "📋 **ESTADO ACTUAL DE LA BASE DE DATOS:**\n\n"
             for r in rows:
                 partido = r[1] if r[1] else "(Sin pronósticos)"
                 res += f"• **{r[0]}**: {partido}\n"
@@ -329,6 +331,40 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🛠️ **Panel de Administrador**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     conn.close()
+
+# --- MANEJADOR DE FOTOS (RECEPCIÓN DE COMPROBANTES DE PAGO) ---
+async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    username = update.effective_user.username or "SinUsername"
+    photo_file_id = update.message.photo[-1].file_id
+
+    # Responder al cliente
+    await update.message.reply_text(
+        "📸 **¡Comprobante de pago recibido!**\n\n"
+        "El administrador ha recibido tu captura y verificará la transacción en Binance Pay.\n"
+        "Tu suscripción VIP se activará en breve.",
+        parse_mode="Markdown"
+    )
+
+    # Reenviar la foto del comprobante directamente al Admin
+    try:
+        keyboard_admin = [
+            [InlineKeyboardButton(f"⚡ APROBAR VIP a {user_id}", callback_data=f"auto_activate_{user_id}")],
+            [InlineKeyboardButton(f"🚫 ANULAR a {user_id}", callback_data=f"auto_revoke_{user_id}")]
+        ]
+        plan_info = USER_PAYMENT_STATE.get(user_id, "No especificado")
+        await context.bot.send_photo(
+            chat_id=SUPERADMIN_ID,
+            photo=photo_file_id,
+            caption=f"📸 **NUEVO COMPROBANTE RECIBIDO**\n\n"
+                    f"👤 **Usuario:** @{username} (ID: `{user_id}`)\n"
+                    f"📦 **Plan seleccionado:** {plan_info}\n\n"
+                    f"Verifica la transacción en Binance y aprueba la suscripción:",
+            reply_markup=InlineKeyboardMarkup(keyboard_admin),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logging.error(f"Error al reenviar captura al admin: {e}")
 
 # --- MANEJADOR DE TEXTO ---
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -443,6 +479,7 @@ ptb_app = ApplicationBuilder().token(BOT_TOKEN).build()
 ptb_app.add_handler(CommandHandler("start", start))
 ptb_app.add_handler(CommandHandler("admin", admin_panel))
 ptb_app.add_handler(CallbackQueryHandler(button_handler))
+ptb_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
 # --- RUTAS DE AIOHTTP PARA RENDER ---
@@ -459,7 +496,6 @@ async def main():
     await ptb_app.initialize()
     await ptb_app.start()
     
-    # Registrar comandos oficiales en el menú desplegable de Telegram
     await ptb_app.bot.set_my_commands([
         BotCommand("start", "Iniciar o reiniciar el bot"),
         BotCommand("admin", "Panel de administración (Solo Admins)")
